@@ -1,0 +1,109 @@
+#!/bin/sh
+
+# invenv
+#
+# usage: invenv [OPTIONS] [COMMAND [ARGS]]
+#
+# For use with Ian Bicking's virtualenv tool. Executes COMMAND with ARGS with
+# the specified or current virtual environment activated.
+#
+# options:
+#    -C DIRECTORY    use a virtual environment located at DIRECTORY
+#    -n NAME         use a virtual environment named NAME in $WORKON_HOME
+#
+# If no virtual environment is specified and `findup` is installed, it walks up
+# the directory tree from the current directory looking for one to activate.
+#
+# If no `COMMAND` is given, a subshell is launched instead. "Deactivate the
+# environment" by exiting the subshell.
+#
+# Using invenv in an already-active virtual environment is idempotent (the
+# redundant invocation will have no ill effects.)
+#
+# Using invenv in a virtual environment while a different one is active will
+# show a warning or fail, to avoid ambiguity or environment cross-contamination.
+
+# FIXME: What is the most reliable mechanism for checking whether a given
+# directory is the root of a virtualenv?
+#
+# I used to think it was detecting an executable bin/python and a corresponding
+# lib/python{version}/site.py, but
+# - I can't recall the source of this recommendation
+# - It's difficult to determine the appropriate {version} to use
+# - This also detects the system-level python (is this bad?)
+#
+# For simplicity, I'm just going to look for files named "bin/python" and deal
+# with edge cases when I encounter them. If only virtualenv used an unambiguous
+# context marker file...
+
+if [ "$1" = "-C" ]; then
+    virtual_env="$2"
+    shift 2
+elif [ "$1" = "-n" ]; then
+    virtual_env="$WORKON_HOME/$2"
+    shift 2
+elif which findup > /dev/null; then
+    python="$(findup bin/python)"
+    virtual_env="${python%/bin/python}"
+elif [ -e ./bin/python ]; then
+    virtual_env="$(pwd)"
+fi
+
+# If a virtualenv is already active, do the right thing.
+if [ "$VIRTUAL_ENV" ]; then
+    # If it's the current one, or we couldn't find one besides root, no need to
+    # modify environment.
+    if [ ! "$virtual_env" -o "$virtual_env" = "$VIRTUAL_ENV" ]; then
+        if [ "$*" ]; then
+            # If a command was provided, just run it in the current environment
+            exec "${@}"
+        else
+            # If a command was not provided, don't launch a shell, just exit.
+            echo "Note: this virtual environment is already active; not launching a subshell." >&2
+            exit 0
+        fi
+    # The detected env and the active env differ. Warn/error about it, unless squelched.
+    elif [ ! "$INVENV_IGNORE_ACTIVE" ]; then
+        echo "Active environment:    $VIRTUAL_ENV" >&2
+        echo "Specified environment: $virtual_env" >&2
+        # If a command was provided, chicken out for safety.
+        if [ "$*" ]; then
+            echo "Error: A different virtual environment is active; deactivate it first or set INVENV_IGNORE_ACTIVE=1." >&2
+            exit 2
+        # Otherwise, warn before launching a subshell like usual.
+        else
+            echo "Warning: A different virtual environment was active; exit and deactivate it to avoid cross-contamination." >&2
+        fi
+    fi
+fi
+
+if ve="$(readlink -f "$virtual_env"/)"
+then
+    virtual_env="$ve"
+else
+    echo "Error: No virtual environment found at $virtual_env" >&2
+    exit 2
+fi
+
+# We don't want to "activate" if the python found is /bin/python, (the root
+# directory is not a venv) so bail if $virtual_env is now "/".
+if [ "$virtual_env" = "/" ]; then
+    echo "Error: no virtual environment was found."
+    exit 2
+fi
+
+if [ ! -e "$virtual_env"/bin/python ]; then
+    echo "Error: No virtual environment found at $virtual_env" >&2
+    exit 2
+fi
+
+if [ ! -x "$virtual_env"/bin/python ]; then
+    echo "Error: Can't execute $virtual_env/bin/python" >&2
+    exit 2
+fi
+
+# "Activate"
+export VIRTUAL_ENV="$virtual_env"
+export PATH="$VIRTUAL_ENV/bin:$PATH"
+unset PYTHON_HOME
+exec "${@:-$SHELL}"
