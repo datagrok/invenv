@@ -45,4 +45,4 @@ In the past I have called this tool "inve" or just "activate."
 All of the code herein is copyright 2019 [Michael F. Lamb](http://datagrok.org) and released under the terms of the [GNU Affero General Public License, version 3][AGPL-3.0+] (or, at your option, any later version.)
 
 [AGPL-3.0+]: http://www.gnu.org/licenses/agpl.html
-[findup]: https://github.com/datagrok/findup-sh
+[`findup`]: https://github.com/datagrok/findup-sh
